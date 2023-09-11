@@ -2,6 +2,7 @@ import glob
 import logging
 import os
 import random
+import re
 
 import albumentations as A
 import cv2
@@ -24,6 +25,7 @@ LOGGER = logging.getLogger(__name__)
 
 class InpaintingTrainDataset(Dataset):
     def __init__(self, indir, mask_generator, transform):
+        indir = re.sub('\/\/', '/', indir)
         self.in_files = list(glob.glob(os.path.join(indir, '**', '*.jpg'), recursive=True))
         self.mask_generator = mask_generator
         self.transform = transform
@@ -47,6 +49,7 @@ class InpaintingTrainDataset(Dataset):
 
 class InpaintingTrainWebDataset(IterableDataset):
     def __init__(self, indir, mask_generator, transform, shuffle_buffer=200):
+        indir = re.sub('\/\/', '/', indir)
         self.impl = webdataset.Dataset(indir).shuffle(shuffle_buffer).decode('rgb').to_tuple('jpg')
         self.mask_generator = mask_generator
         self.transform = transform
@@ -63,6 +66,7 @@ class InpaintingTrainWebDataset(IterableDataset):
 
 class ImgSegmentationDataset(Dataset):
     def __init__(self, indir, mask_generator, transform, out_size, segm_indir, semantic_seg_n_classes):
+        indir = re.sub('\/\/', '/', indir)
         self.indir = indir
         self.segm_indir = segm_indir
         self.mask_generator = mask_generator
@@ -205,6 +209,7 @@ def get_transforms(transform_variant, out_size):
 
 def make_default_train_dataloader(indir, kind='default', out_size=512, mask_gen_kwargs=None, transform_variant='default',
                                   mask_generator_kind="mixed", dataloader_kwargs=None, ddp_kwargs=None, **kwargs):
+    indir = re.sub('\/\/', '/', indir)
     LOGGER.info(f'Make train dataloader {kind} from {indir}. Using mask generator={mask_generator_kind}')
 
     mask_generator = get_mask_generator(kind=mask_generator_kind, kwargs=mask_gen_kwargs)
@@ -247,6 +252,7 @@ def make_default_train_dataloader(indir, kind='default', out_size=512, mask_gen_
 
 
 def make_default_val_dataset(indir, kind='default', out_size=512, transform_variant='default', **kwargs):
+    indir = re.sub('\/\/', '/', indir)
     if OmegaConf.is_list(indir) or isinstance(indir, (tuple, list)):
         return ConcatDataset([
             make_default_val_dataset(idir, kind=kind, out_size=out_size, transform_variant=transform_variant, **kwargs) for idir in indir 

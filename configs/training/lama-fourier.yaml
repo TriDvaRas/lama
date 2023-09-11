@@ -6,12 +6,12 @@ training_model:
   concat_mask: true
   store_discr_outputs_for_vis: true
 losses:
-  l1:
+  l1: # 4
     weight_missing: 0
     weight_known: 10
-  perceptual:
+  perceptual: # 2
     weight: 0
-  adversarial:
+  adversarial: # 1 
     kind: r1
     weight: 10
     gp_coef: 0.001
@@ -19,7 +19,7 @@ losses:
     allow_scale_mask: true
   feature_matching:
     weight: 100
-  resnet_pl:
+  resnet_pl: # 3
     weight: 30
     weights_path: ${env:TORCH_HOME}
 

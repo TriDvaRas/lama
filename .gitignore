@@ -2,10 +2,30 @@
 __pycache__/
 *.py[cod]
 *$py.class
-
+my_dataset/*
+experiments/*
+outputs/
+output
+samples
+*.zip
+LaMa_test_images
+LaMa_models
+input/*
+test/
+tb_logs/
+myModel
+hub/
+dipMods
+ade20k
+big-lama
+2.2. Loss functions.md
+ckpts.txt
+dtest
+ffc.md
+fid.md
+log.txt
 # C extensions
 *.so
-
 # Distribution / packaging
 .Python
 build/

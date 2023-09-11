@@ -1,11 +1,11 @@
-# @package _group_
+
 kwargs:
   gpus: -1
   accelerator: ddp
-  max_epochs: 40
+  max_epochs: 128
   gradient_clip_val: 1
-  log_gpu_memory: None  # set to min_max or all for debug
-  limit_train_batches: 25000
+  # log_gpu_memory: None  # set to min_max or all for debug
+  limit_train_batches: 10000
   val_check_interval: ${trainer.kwargs.limit_train_batches}
   # fast_dev_run: True  # uncomment for faster debug
   # track_grad_norm: 2  # uncomment to track L2 gradients norm
@@ -14,12 +14,13 @@ kwargs:
 #  precision: 16
 #  amp_backend: native
 #  amp_level: O1
-  # resume_from_checkpoint: path  # override via command line trainer.resume_from_checkpoint=path_to_checkpoint
+  resume_from_checkpoint: /home/conda/lama/experiments/conda_2022-04-24_14-37-30_train_lama-fourier_/models/last.ckpt  # override via command line trainer.resume_from_checkpoint=path_to_checkpoint
+  # resume_from_checkpoint: /home/conda/lama/experiments/conda_2022-05-22_09-02-48_train_lama-fourier_/models/last.ckpt  # override via command line trainer.resume_from_checkpoint=path_to_checkpoint
   terminate_on_nan: False
-  # auto_scale_batch_size: True  # uncomment to find largest batch size
+  auto_scale_batch_size: True  
   check_val_every_n_epoch: 1
   num_sanity_val_steps: 8
-#  limit_val_batches: 1000000
+  limit_val_batches: 8500
   replace_sampler_ddp: False
 
 checkpoint_kwargs:

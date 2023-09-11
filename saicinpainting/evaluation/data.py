@@ -1,5 +1,6 @@
 import glob
 import os
+import logging
 
 import cv2
 import PIL.Image as Image
@@ -8,6 +9,7 @@ import numpy as np
 from torch.utils.data import Dataset
 import torch.nn.functional as F
 
+LOGGER = logging.getLogger(__name__)
 
 def load_image(fname, mode='RGB', return_orig=False):
     img = np.array(Image.open(fname).convert(mode))
@@ -56,10 +58,15 @@ def scale_image(img, factor, interpolation=cv2.INTER_AREA):
 
 
 class InpaintingDataset(Dataset):
-    def __init__(self, datadir, img_suffix='.jpg', pad_out_to_modulo=None, scale_factor=None):
+    def __init__(self, datadir, img_suffix='.png', pad_out_to_modulo=None, scale_factor=None):
         self.datadir = datadir
+        LOGGER.info(f"debug stars")
+        LOGGER.info(f"{datadir}")
         self.mask_filenames = sorted(list(glob.glob(os.path.join(self.datadir, '**', '*mask*.png'), recursive=True)))
+        # LOGGER.info(f"{os.path.join(self.datadir, '**', '*mask*.png')}")
+        LOGGER.info(f"{len(self.mask_filenames)}")
         self.img_filenames = [fname.rsplit('_mask', 1)[0] + img_suffix for fname in self.mask_filenames]
+        LOGGER.info(f"{len(self.img_filenames)}")
         self.pad_out_to_modulo = pad_out_to_modulo
         self.scale_factor = scale_factor
 

@@ -1,0 +1,3 @@
+data_root_dir: /home/conda/lama/my_dataset/
+out_root_dir: /home/conda/lama/experiments/
+tb_dir: /home/conda/lama/tb_logs/

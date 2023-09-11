@@ -4,6 +4,7 @@ import logging
 import os
 import sys
 import traceback
+from datetime import timedelta
 
 os.environ['OMP_NUM_THREADS'] = '1'
 os.environ['OPENBLAS_NUM_THREADS'] = '1'
@@ -55,7 +56,13 @@ def main(config: OmegaConf):
 
         trainer = Trainer(
             # there is no need to suppress checkpointing in ddp, because it handles rank on its own
-            callbacks=ModelCheckpoint(dirpath=checkpoints_dir, **config.trainer.checkpoint_kwargs),
+            callbacks=ModelCheckpoint(
+                dirpath=checkpoints_dir, 
+                # train_time_interval=timedelta(
+                #          minutes=1,
+                #      ),
+                **config.trainer.checkpoint_kwargs
+            ),
             logger=metrics_logger,
             default_root_dir=os.getcwd(),
             **trainer_kwargs
