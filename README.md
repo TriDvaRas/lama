@@ -1,7 +1,5 @@
 # 🦙 LaMa: Resolution-robust Large Mask Inpainting with Fourier Convolutions
 
-Official implementation by Samsung Research
-
 by Roman Suvorov, Elizaveta Logacheva, Anton Mashikhin, 
 Anastasia Remizova, Arsenii Ashukha, Aleksei Silvestrov, Naejin Kong, Harshith Goka, Kiwoong Park, Victor Lempitsky.
 
@@ -12,10 +10,10 @@ Anastasia Remizova, Arsenii Ashukha, Aleksei Silvestrov, Naejin Kong, Harshith G
 LaMa generalizes surprisingly well to much higher resolutions (~2k❗️) than it saw during training (256x256), and achieves the excellent performance even in challenging scenarios, e.g. completion of periodic structures.</b>
 </p>
 
-[[Project page](https://saic-mdal.github.io/lama-project/)] [[arXiv](https://arxiv.org/abs/2109.07161)] [[Supplementary](https://ashukha.com/projects/lama_21/lama_supmat_2021.pdf)] [[BibTeX](https://senya-ashukha.github.io/projects/lama_21/paper.txt)] [[Casual GAN Papers Summary](https://www.casualganpapers.com/large-masks-fourier-convolutions-inpainting/LaMa-explained.html)]
+[[Project page](https://advimman.github.io/lama-project/)] [[arXiv](https://arxiv.org/abs/2109.07161)] [[Supplementary](https://ashukha.com/projects/lama_21/lama_supmat_2021.pdf)] [[BibTeX](https://senya-ashukha.github.io/projects/lama_21/paper.txt)] [[Casual GAN Papers Summary](https://www.casualganpapers.com/large-masks-fourier-convolutions-inpainting/LaMa-explained.html)]
  
 <p align="center">
-  <a href="https://colab.research.google.com/github/saic-mdal/lama/blob/master//colab/LaMa_inpainting.ipynb">
+  <a href="https://colab.research.google.com/github/advimman/lama/blob/master//colab/LaMa_inpainting.ipynb">
   <img src="https://colab.research.google.com/assets/colab-badge.svg"/>
   </a>
       <br>
@@ -31,6 +29,13 @@ LaMa generalizes surprisingly well to much higher resolutions (~2k❗️) than i
   <img src="https://raw.githubusercontent.com/senya-ashukha/senya-ashukha.github.io/master/projects/lama_21/gif_for_lightning_v1_white.gif" />
 </p>
 
+# LaMa development
+(Feel free to share your paper by creating an issue)
+- Amazing results [paper](https://arxiv.org/abs/2206.13644) / [video](https://www.youtube.com/watch?v=gEukhOheWgE) / code https://github.com/advimman/lama/pull/112 / by Geomagical Labs ([geomagical.com](geomagical.com))
+<p align="center">
+  <img src="https://raw.githubusercontent.com/senya-ashukha/senya-ashukha.github.io/master/images/FeatureRefinement.png" />
+</p>
+
 # Non-official 3rd party apps:
 (Feel free to share your app/implementation/demo by creating an issue)
 - [https://cleanup.pictures](https://cleanup.pictures/) - a simple interactive object removal tool by [@cyrildiagne](https://twitter.com/cyrildiagne)
@@ -38,11 +43,15 @@ LaMa generalizes surprisingly well to much higher resolutions (~2k❗️) than i
 - Integrated to [Huggingface Spaces](https://huggingface.co/spaces) with [Gradio](https://github.com/gradio-app/gradio). See demo: [![Hugging Face Spaces](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-Spaces-blue)](https://huggingface.co/spaces/akhaliq/lama) by [@AK391](https://github.com/AK391)
 - Telegram bot [@MagicEraserBot](https://t.me/MagicEraserBot) by [@Moldoteck](https://github.com/Moldoteck), [code](https://github.com/Moldoteck/MagicEraser)
 - [Auto-LaMa](https://github.com/andy971022/auto-lama) = DE:TR object detection + LaMa inpainting by [@andy971022](https://github.com/andy971022)
+- [LAMA-Magic-Eraser-Local](https://github.com/zhaoyun0071/LAMA-Magic-Eraser-Local) = a standalone inpainting application built with PyQt5 by [@zhaoyun0071](https://github.com/zhaoyun0071)
+- [Hama](https://www.hama.app/) - object removal with a smart brush which simplifies mask drawing.
+- [ModelScope](https://www.modelscope.cn/models/damo/cv_fft_inpainting_lama/summary) = the largest Model Community in Chinese by  [@chenbinghui1](https://github.com/chenbinghui1).
+- [LaMa with MaskDINO](https://github.com/qwopqwop200/lama-with-maskdino) = MaskDINO object detection + LaMa inpainting with refinement by [@qwopqwop200](https://github.com/qwopqwop200).
 
 # Environment setup
 
 Clone the repo:
-`git clone https://github.com/saic-mdal/lama.git`
+`git clone https://github.com/advimman/lama.git`
 
 There are three options of an environment:
 
@@ -79,7 +88,7 @@ There are three options of an environment:
 Run
 ```
 cd lama
-export TORCH_HOME=$(pwd) && export PYTHONPATH=.
+export TORCH_HOME=$(pwd) && export PYTHONPATH=$(pwd)
 ```
 
 **1. Download pre-trained models**
@@ -116,7 +125,7 @@ unzip LaMa_test_images.zip
  <summary>OR prepare your data:</summary>
 1) Create masks named as `[images_name]_maskXXX[image_suffix]`, put images and masks in the same folder. 
 
-- You can use the [script](https://github.com/saic-mdal/lama/blob/main/bin/gen_mask_dataset.py) for random masks generation. 
+- You can use the [script](https://github.com/advimman/lama/blob/main/bin/gen_mask_dataset.py) for random masks generation. 
 - Check the format of the files:
     ```    
     image1_mask001.png
@@ -144,16 +153,19 @@ bash docker/2_predict.sh $(pwd)/big-lama $(pwd)/LaMa_test_images $(pwd)/output d
 ```
 Docker cuda: TODO
 
+**4. Predict with Refinement**
+
+On the host machine:
+
+    python3 bin/predict.py refine=True model.path=$(pwd)/big-lama indir=$(pwd)/LaMa_test_images outdir=$(pwd)/output
+
 # Train and Eval
-
-⚠️ Warning: The training is not fully tested yet, e.g., did not re-training after refactoring ⚠️
-
 
 Make sure you run:
 
 ```
 cd lama
-export TORCH_HOME=$(pwd) && export PYTHONPATH=.
+export TORCH_HOME=$(pwd) && export PYTHONPATH=$(pwd)
 ```
 
 Then download models for _perceptual loss_:
@@ -212,7 +224,7 @@ On the host machine:
 
     # Make shure you are in lama folder
     cd lama
-    export TORCH_HOME=$(pwd) && export PYTHONPATH=.
+    export TORCH_HOME=$(pwd) && export PYTHONPATH=$(pwd)
 
     # Download CelebA-HQ dataset
     # Download data256x256.zip from https://drive.google.com/drive/folders/11Vz0fqHS2rXDb5pprgTjpD7S2BAJhi1P
@@ -260,7 +272,7 @@ On the host machine:
 
     # Make shure you are in lama folder
     cd lama
-    export TORCH_HOME=$(pwd) && export PYTHONPATH=.
+    export TORCH_HOME=$(pwd) && export PYTHONPATH=$(pwd)
 
     # You need to prepare following image folders:
     $ ls my_dataset
@@ -445,12 +457,3 @@ If you found this code helpful, please consider citing:
   year={2021}
 }
 ```
-
-<div style="text-align:center" align="center">
-<br>
-<br>
-  <img loading="lazy"  height="50px" src="https://raw.githubusercontent.com/saic-mdal/lama-project/main/docs/img/samsung_ai.png" />
-</div>
-<br>
-<p style="font-weight:normal; font-size: 16pt;text-align:center"align="center"  >Copyright © 2021</p>
-<br>
