@@ -4,7 +4,7 @@ training_model:
   kind: default
   visualize_each_iters: 1000
   concat_mask: true
-  store_discr_outputs_for_vis: true
+  store_discr_outputs_for_vis: false
 losses:
   l1: # 4
     weight_missing: 0

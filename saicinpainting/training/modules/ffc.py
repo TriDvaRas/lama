@@ -12,6 +12,12 @@ from saicinpainting.training.modules.spatial_transform import LearnableSpatialTr
 from saicinpainting.training.modules.squeeze_excitation import SELayer
 from saicinpainting.utils import get_shape
 
+from torch.nn.parameter import Parameter
+import pywt
+from ptwt.conv_transform import wavedec, waverec
+from ptwt.wavelets_learnable import ProductFilter
+import ptwt
+
 
 class FFCSE_block(nn.Module):
 
@@ -46,8 +52,130 @@ class FFCSE_block(nn.Module):
         return x_l, x_g
 
 
-class FourierUnit(nn.Module):
+class WaveletUnit(nn.Module):
+    def __init__(self, in_channels, out_channels, wavelet='haar'):
+        super(WaveletUnit, self).__init__()
 
+        self.wavelet = wavelet
+        self.conv_layer = nn.Conv2d(in_channels * 2,  
+                                    out_channels,
+                                    kernel_size=1,
+                                    stride=1,
+                                    padding=0,
+                                    bias=False)
+
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.relu = nn.ReLU(inplace=True)
+
+    def forward(self, x):
+        batch, channels, height, width = x.size()
+        # print("x size", x.size())
+        coeffs_list = []
+        # debug_print_coeffs_sizes(x)
+        # ! gpu 3
+        coeffs = ptwt.wavedec3(
+            x, self.wavelet)
+        # debug_print_coeffs_sizes3(coeffs)
+        items = coeffs[5].items()
+        toadd = []
+        addKeys = ['aad', 'ada', 'add', 'daa']# , 'dad', 'dda', 'ddd'
+        for key, value in items:
+            if key in addKeys:
+                toadd.append(value)
+            
+        coeffs_list.append(torch.stack(toadd))
+        # coeffs_list.append(torch.stack(ddd))
+        # ! gpu 2
+        # for i in range(batch):
+        #     for j in range(channels):
+        #         coeffs = ptwt.wavedec2(
+        #             x[i, j], self.wavelet)
+        #         cA, (cH, cV, cD) = coeffs[0], coeffs[5]
+        #         coeffs_list.append(torch.stack([cH, cV]))
+        # ! cpu 
+        # for i in range(batch):
+        #     for j in range(channels):
+                # coeffs = pywt.dwt2(
+                #     x[i, j].cpu().detach().numpy(), self.wavelet)
+                # cA, (cH, cV, cD) = coeffs
+                # coeffs_list.append([cA, cH, cV, cD])
+        # coeffs_array = np.array(coeffs_list)
+        # coeffs_tensor = torch.Tensor(coeffs_array).to(x.device)
+        coeffs_tensor = torch.stack(coeffs_list)
+        coeffs_tensor = coeffs_tensor.view(batch, -1, height // 2, width // 2)
+        # print("coeffs_tensor size", coeffs_tensor.size())
+        out = self.conv_layer(coeffs_tensor)
+        out = self.relu(self.bn(out))
+        # print("out size", out.size())
+        # return out
+        return out.repeat(1, 2, 2, 2)
+
+    def forwardGPUBUTSLOW(self, x):
+        batch, channels, height, width = x.size()
+
+        # Flatten the tensor for some intermediate computation
+        flattened = x.view(channels, -1)
+
+        # ... perform some operations on the flattened tensor here ...
+        coeffs_tensor = ptwt.wavedec2(
+            flattened, self.wavelet, mode='zero', level=1)
+        # Reshape it back to its original shape
+        reshaped = flattened.view(batch, channels, height, width)
+
+        # Assuming the wavelet reduces dimension by 2
+        # coeff_shape = (height // 2, width // 2)
+
+        # Pre-allocate tensor. For simplicity, assuming that all coefficients (cA, cH, cV, cD) have the same shape
+        print(x.size())
+        # coeffs_tensor = ptwt.wavedec2(
+        #     x, self.wavelet, mode='zero', level=1)
+        # coeffs_tensor = torch.zeros((batch, channels * 4, *coeff_shape), device=x.device, dtype=x.dtype)
+        # for i in range(batch):
+        #     for j in range(channels):
+        #         data_slice = x[i, j, :, :]
+        #         # Apply the wavelet transform
+        #         coeffs = ptwt.wavedec2(data_slice, self.wavelet, mode='zero', level=1)
+        #         cA, (cH, cV, cD) = coeffs[0], coeffs[1]  # Assuming one level of decomposition
+        #         # Populate the pre-allocated tensor
+        #         start_idx = j * 4
+        #         coeffs_tensor[i, start_idx] = cA
+        #         coeffs_tensor[i, start_idx + 1] = cH
+        #         coeffs_tensor[i, start_idx + 2] = cV
+        #         coeffs_tensor[i, start_idx + 3] = cD
+
+        # Reshape and process the tensor as needed
+        coeffs_tensor = coeffs_tensor.view(batch, -1, height // 2, width // 2)
+
+        out = self.conv_layer(coeffs_tensor)
+        out = self.relu(self.bn(out))
+
+        return out.repeat(1, 2, 2, 2)
+
+
+def debug_print_coeffs_sizes3(coeffs):
+    for i, item in enumerate(coeffs):
+        if isinstance(item, torch.Tensor):
+            print(f"coeffs[{i}] (Single Tensor) Size: {item.size()}")
+        elif isinstance(item, tuple):
+            for j, tensor in enumerate(item):
+                print(f"coeffs[{i}][{j}] (Tuple Tensor) Size: {tensor.size()}")
+        elif isinstance(item, dict):
+            for key, tensor in item.items():
+                print(f"coeffs[{i}]['{key}'] (Dict Tensor) Size: {tensor.size()}")
+        else:
+            print(f"Unknown type at coeffs[{i}]")
+def debug_print_coeffs_sizes(coeffs):
+    for i, item in enumerate(coeffs):
+        if isinstance(item, torch.Tensor):
+            print(f"coeffs[{i}] (Single Tensor) Size: {item.size()}")
+        elif isinstance(item, tuple):
+            for j, tensor in enumerate(item):
+                print(f"coeffs[{i}][{j}] (Tuple Tensor) Size: {tensor.size()}")
+        else:
+            print(f"Unknown type at coeffs[{i}]")
+
+
+class FourierUnit(nn.Module):
     def __init__(self, in_channels, out_channels, groups=1, spatial_scale_factor=None, spatial_scale_mode='bilinear',
                  spectral_pos_encoding=False, use_se=False, se_kwargs=None, ffc3d=False, fft_norm='ortho'):
         # bn_layer not used
@@ -78,20 +206,24 @@ class FourierUnit(nn.Module):
 
         if self.spatial_scale_factor is not None:
             orig_size = x.shape[-2:]
-            x = F.interpolate(x, scale_factor=self.spatial_scale_factor, mode=self.spatial_scale_mode, align_corners=False)
+            x = F.interpolate(x, scale_factor=self.spatial_scale_factor,
+                              mode=self.spatial_scale_mode, align_corners=False)
 
         r_size = x.size()
         # (batch, c, h, w/2+1, 2)
         fft_dim = (-3, -2, -1) if self.ffc3d else (-2, -1)
         ffted = torch.fft.rfftn(x, dim=fft_dim, norm=self.fft_norm)
         ffted = torch.stack((ffted.real, ffted.imag), dim=-1)
-        ffted = ffted.permute(0, 1, 4, 2, 3).contiguous()  # (batch, c, 2, h, w/2+1)
+        # (batch, c, 2, h, w/2+1)
+        ffted = ffted.permute(0, 1, 4, 2, 3).contiguous()
         ffted = ffted.view((batch, -1,) + ffted.size()[3:])
 
         if self.spectral_pos_encoding:
             height, width = ffted.shape[-2:]
-            coords_vert = torch.linspace(0, 1, height)[None, None, :, None].expand(batch, 1, height, width).to(ffted)
-            coords_hor = torch.linspace(0, 1, width)[None, None, None, :].expand(batch, 1, height, width).to(ffted)
+            coords_vert = torch.linspace(0, 1, height)[None, None, :, None].expand(
+                batch, 1, height, width).to(ffted)
+            coords_hor = torch.linspace(0, 1, width)[None, None, None, :].expand(
+                batch, 1, height, width).to(ffted)
             ffted = torch.cat((coords_vert, coords_hor, ffted), dim=1)
 
         if self.use_se:
@@ -105,12 +237,138 @@ class FourierUnit(nn.Module):
         ffted = torch.complex(ffted[..., 0], ffted[..., 1])
 
         ifft_shape_slice = x.shape[-3:] if self.ffc3d else x.shape[-2:]
-        output = torch.fft.irfftn(ffted, s=ifft_shape_slice, dim=fft_dim, norm=self.fft_norm)
+        output = torch.fft.irfftn(
+            ffted, s=ifft_shape_slice, dim=fft_dim, norm=self.fft_norm)
 
         if self.spatial_scale_factor is not None:
-            output = F.interpolate(output, size=orig_size, mode=self.spatial_scale_mode, align_corners=False)
+            output = F.interpolate(
+                output, size=orig_size, mode=self.spatial_scale_mode, align_corners=False)
 
         return output
+
+
+class WaveletLayer(torch.nn.Module):
+    """
+    Create a learn-able Wavelet layer as described here:
+    https://arxiv.org/pdf/2004.09569.pdf
+    The weights are parametrized by S*W*G*P*W*B
+    With S,G,B diagonal matrices, P a random permutation and W a
+    learnable-wavelet transform.
+    """
+
+    def __init__(self, depth, init_wavelet, scales, p_drop=0.5):
+        super().__init__()
+        print("wavelet dropout:", p_drop)
+        self.scales = scales
+        self.wavelet = init_wavelet
+        self.mode = "zero"
+        self.coefficient_len_lst = [depth]
+        for _ in range(scales):
+            self.coefficient_len_lst.append(
+                pywt.dwt_coeff_len(
+                    self.coefficient_len_lst[-1],
+                    init_wavelet.dec_lo.shape[-1],
+                    self.mode,
+                )
+            )
+        self.coefficient_len_lst = self.coefficient_len_lst[1:]
+        self.coefficient_len_lst.append(self.coefficient_len_lst[-1])
+
+        wave_depth = np.sum(self.coefficient_len_lst)
+        self.depth = depth
+        self.diag_vec_s = Parameter(
+            torch.from_numpy(np.ones(depth, np.float32)))
+        self.diag_vec_g = Parameter(
+            torch.from_numpy(np.ones(wave_depth, np.float32)))
+        self.diag_vec_b = Parameter(
+            torch.from_numpy(np.ones(depth, np.float32)))
+        perm = np.random.permutation(np.eye(wave_depth, dtype=np.float32))
+        self.perm = Parameter(torch.from_numpy(perm), requires_grad=False)
+
+        self.drop_s = torch.nn.Dropout(p=p_drop)
+        self.drop_g = torch.nn.Dropout(p=p_drop)
+        self.drop_b = torch.nn.Dropout(p=p_drop)
+
+    def mul_s(self, x):
+        return torch.mm(x, self.drop_s(torch.diag(self.diag_vec_s)))
+
+    def mul_g(self, x):
+        return torch.mm(x, self.drop_g(torch.diag(self.diag_vec_g)))
+
+    def mul_b(self, x):
+        x_reshaped = x.view(-1, x.shape[-1] * x.shape[-2])
+        result = torch.mm(x_reshaped, self.drop_b(torch.diag(self.diag_vec_b)))
+        # Reshape it back to original shape if needed
+        return result.view(x.shape)
+
+    def mul_p(self, x):
+        return torch.mm(x, self.perm)
+
+    def wavelet_analysis(self, x):
+        """Compute a 1d-analysis transform.
+        Args:
+            x (torch.tensor): 2d input tensor
+        Returns:
+            [torch.tensor]: 2d output tensor.
+        """
+        # c_lst = self.wavelet.analysis(x.unsqueeze(0).unsqueeze(0))
+        c_lst = wavedec(x.unsqueeze(1), self.wavelet, level=self.scales)
+        shape_lst = [c_el.shape[-1] for c_el in c_lst]
+        c_tensor = torch.cat([c for c in c_lst], -1)
+        assert (
+            shape_lst == self.coefficient_len_lst[::-1]
+        ), "Wavelet shape assumptions false. This is a bug."
+        return c_tensor
+
+    def wavelet_reconstruction(self, x):
+        """Reconstruction from a tensor input.
+        Args:
+            x (torch.Tensor): Analysis coefficient tensor.
+        Returns:
+            torch.Tensor: Input reconstruction.
+        """
+        coeff_lst = []
+        start = 0
+        # turn tensor into list
+        for s in range(self.scales + 1):
+            stop = start + self.coefficient_len_lst[::-1][s]
+            coeff_lst.append(x[..., start:stop])
+            start = self.coefficient_len_lst[s]
+        y = waverec(coeff_lst, self.wavelet)
+        return y
+
+    def forward(self, x):
+        """Evaluate the wavelet layer.
+        Args:
+            x (torch.tensor): The layer input.
+        Returns:
+            torch.tensor: Layer output.
+        """
+        # test = self.wavelet_analysis(x)
+        step1 = self.mul_b(x)
+        step2 = self.wavelet_analysis(step1)
+        step3 = self.mul_p(step2)
+        step4 = self.mul_g(step3)
+        step5 = self.wavelet_reconstruction(step4)
+        step6 = self.mul_s(step5)
+
+        return step6
+
+    def extra_repr(self):
+        return "depth={}".format(self.depth)
+
+    def get_wavelet_loss(self):
+        """Returns the wavelet loss for the wavelet in the layer.
+            This value must be added to the cost for the wavelet learning to
+            work.
+
+        Returns:
+            torch.Tensor: The wavelet loss scalar.
+        """
+
+        prl, _, _ = self.wavelet.perfect_reconstruction_loss()
+        acl, _, _ = self.wavelet.alias_cancellation_loss()
+        return prl + acl
 
 
 class SpectralTransform(nn.Module):
@@ -131,11 +389,33 @@ class SpectralTransform(nn.Module):
             nn.BatchNorm2d(out_channels // 2),
             nn.ReLU(inplace=True)
         )
-        self.fu = FourierUnit(
-            out_channels // 2, out_channels // 2, groups, **fu_kwargs)
+        # init_wavelet = ProductFilter(
+        #     torch.rand(size=[6], requires_grad=True) / 2 - 0.25,
+        #     torch.rand(size=[6], requires_grad=True) / 2 - 0.25,
+        #     torch.rand(size=[6], requires_grad=True) / 2 - 0.25,
+        #     torch.rand(size=[6], requires_grad=True) / 2 - 0.25,
+        # )
+        # self.fu = WaveletLayer(500, init_wavelet, 6, p_drop=0.5)
+        # if self.enable_lfu:
+        #     self.lfu = WaveletLayer(500, init_wavelet, 6, p_drop=0.5)
+        # self.fu = WaveletUnit(
+        #     out_channels // 4, out_channels // 4, groups, **fu_kwargs)
+        # if self.enable_lfu:
+        #     self.lfu = WaveletUnit(
+        #         out_channels // 4, out_channels // 4, groups)
+
+        self.fu = WaveletUnit(
+            out_channels // 2, out_channels // 4)
         if self.enable_lfu:
-            self.lfu = FourierUnit(
-                out_channels // 2, out_channels // 2, groups)
+            self.lfu = WaveletUnit(
+                out_channels // 2, out_channels // 4)
+
+        # self.fu = FourierUnit(
+        #     out_channels // 2, out_channels // 2, groups, **fu_kwargs)
+        # if self.enable_lfu:
+        #     self.lfu = FourierUnit(
+        #         out_channels // 2, out_channels // 2, groups)
+
         self.conv2 = torch.nn.Conv2d(
             out_channels // 2, out_channels, kernel_size=1, groups=groups, bias=False)
 
@@ -270,13 +550,16 @@ class FFCResnetBlock(nn.Module):
                                 padding_type=padding_type,
                                 **conv_kwargs)
         if spatial_transform_kwargs is not None:
-            self.conv1 = LearnableSpatialTransformWrapper(self.conv1, **spatial_transform_kwargs)
-            self.conv2 = LearnableSpatialTransformWrapper(self.conv2, **spatial_transform_kwargs)
+            self.conv1 = LearnableSpatialTransformWrapper(
+                self.conv1, **spatial_transform_kwargs)
+            self.conv2 = LearnableSpatialTransformWrapper(
+                self.conv2, **spatial_transform_kwargs)
         self.inline = inline
 
     def forward(self, x):
         if self.inline:
-            x_l, x_g = x[:, :-self.conv1.ffc.global_in_num], x[:, -self.conv1.ffc.global_in_num:]
+            x_l, x_g = x[:, :-self.conv1.ffc.global_in_num], x[:, -
+                                                               self.conv1.ffc.global_in_num:]
         else:
             x_l, x_g = x if type(x) is tuple else (x, 0)
 
@@ -316,12 +599,13 @@ class FFCResNetGenerator(nn.Module):
                  FFC_BN_ACT(input_nc, ngf, kernel_size=7, padding=0, norm_layer=norm_layer,
                             activation_layer=activation_layer, **init_conv_kwargs)]
 
-        ### downsample
+        # downsample
         for i in range(n_downsampling):
             mult = 2 ** i
             if i == n_downsampling - 1:
                 cur_conv_kwargs = dict(downsample_conv_kwargs)
-                cur_conv_kwargs['ratio_gout'] = resnet_conv_kwargs.get('ratio_gin', 0)
+                cur_conv_kwargs['ratio_gout'] = resnet_conv_kwargs.get(
+                    'ratio_gin', 0)
             else:
                 cur_conv_kwargs = downsample_conv_kwargs
             model += [FFC_BN_ACT(min(max_features, ngf * mult),
@@ -334,17 +618,18 @@ class FFCResNetGenerator(nn.Module):
         mult = 2 ** n_downsampling
         feats_num_bottleneck = min(max_features, ngf * mult)
 
-        ### resnet blocks
+        # resnet blocks
         for i in range(n_blocks):
             cur_resblock = FFCResnetBlock(feats_num_bottleneck, padding_type=padding_type, activation_layer=activation_layer,
                                           norm_layer=norm_layer, **resnet_conv_kwargs)
             if spatial_transform_layers is not None and i in spatial_transform_layers:
-                cur_resblock = LearnableSpatialTransformWrapper(cur_resblock, **spatial_transform_kwargs)
+                cur_resblock = LearnableSpatialTransformWrapper(
+                    cur_resblock, **spatial_transform_kwargs)
             model += [cur_resblock]
 
         model += [ConcatTupleLayer()]
 
-        ### upsample
+        # upsample
         for i in range(n_downsampling):
             mult = 2 ** (n_downsampling - i)
             model += [nn.ConvTranspose2d(min(max_features, ngf * mult),
@@ -360,7 +645,8 @@ class FFCResNetGenerator(nn.Module):
         model += [nn.ReflectionPad2d(3),
                   nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
         if add_out_act:
-            model.append(get_activation('tanh' if add_out_act is True else add_out_act))
+            model.append(get_activation(
+                'tanh' if add_out_act is True else add_out_act))
         self.model = nn.Sequential(*model)
 
     def forward(self, input):
@@ -402,13 +688,15 @@ class FFCNLayerDiscriminator(BaseDiscriminator):
             FFC_BN_ACT(nf_prev, nf,
                        kernel_size=kw, stride=1, padding=padw,
                        norm_layer=norm_layer,
-                       activation_layer=lambda *args, **kwargs: nn.LeakyReLU(*args, negative_slope=0.2, **kwargs),
+                       activation_layer=lambda *args, **kwargs: nn.LeakyReLU(
+                           *args, negative_slope=0.2, **kwargs),
                        **conv_kwargs),
             ConcatTupleLayer()
         ]
         sequence.append(cur_model)
 
-        sequence += [[nn.Conv2d(nf, 1, kernel_size=kw, stride=1, padding=padw)]]
+        sequence += [[nn.Conv2d(nf, 1, kernel_size=kw,
+                                stride=1, padding=padw)]]
 
         for n in range(len(sequence)):
             setattr(self, 'model'+str(n), nn.Sequential(*sequence[n]))
