@@ -7,7 +7,7 @@ model:
 
 dataset:
   kind: default
-  img_suffix: .jpg
+  img_suffix: .png
   pad_out_to_modulo: 8
 
 device: cuda

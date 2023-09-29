@@ -34,7 +34,7 @@ train:
 
 val:
   indir: ${location.data_root_dir}/val_256
-  img_suffix: .jpg
+  img_suffix: .png
   dataloader_kwargs:
     batch_size: ${data.val_batch_size}
     shuffle: False
