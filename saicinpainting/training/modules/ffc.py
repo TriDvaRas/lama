@@ -51,64 +51,196 @@ class FFCSE_block(nn.Module):
             self.sigmoid(self.conv_a2g(x))
         return x_l, x_g
 
+class DownsampleLayer(nn.Module):
+    def __init__(self, stride):
+        super(DownsampleLayer, self).__init__()
+        self.stride = stride
 
+    def forward(self, x):
+        # Save original size
+        original_size = x.size()
+        
+        # Combine dimensions except the last 3
+        reshaped_x = x.view(1,-1, *original_size[-3:])
+        
+        # Perform Conv3D
+        in_channels = reshaped_x.size(1)
+        conv = nn.Conv3d(in_channels, in_channels, kernel_size=3, stride=self.stride, padding=1)
+        x = conv(reshaped_x)
+        
+        # Restore original sizes
+        new_size = list(original_size)
+        new_size[-3:] = x.size()[-3:]
+        x = x.view(*new_size)
+
+        return x
+
+class UpsampleLayer(nn.Module):
+    def __init__(self, stride):
+        super(UpsampleLayer, self).__init__()
+        self.stride = stride
+
+    def forward(self, x):
+        # Save original size
+        original_size = x.size()
+        
+        # Combine dimensions except the last 3
+        reshaped_x = x.view(-1, *original_size[-3:])
+
+        # Perform ConvTranspose3D
+        in_channels = reshaped_x.size(1)
+        deconv = nn.ConvTranspose3d(in_channels, in_channels, kernel_size=3, stride=self.stride, padding=1, output_padding=1)
+        x = deconv(reshaped_x)
+        
+        # Restore original sizes
+        new_size = list(original_size)
+        new_size[-3:] = x.size()[-3:]
+        x = x.view(*new_size)
+
+        return x
+    
 class WaveletUnit(nn.Module):
     def __init__(self, in_channels, out_channels, wavelet='haar'):
         super(WaveletUnit, self).__init__()
 
         self.wavelet = wavelet
-        self.conv_layer = nn.Conv2d(in_channels * 2,  
-                                    out_channels,
+        self.conv_layer = nn.Conv2d(in_channels * 2,
+                                    out_channels * 2,
                                     kernel_size=1,
                                     stride=1,
                                     padding=0,
                                     bias=False)
 
-        self.bn = nn.BatchNorm2d(out_channels)
+        self.bn = nn.BatchNorm2d(out_channels*2)
         self.relu = nn.ReLU(inplace=True)
-
+        self.convsize0 = in_channels * 2
+        self.convsize1 = out_channels * 2
+        self.convsize2 = 1
+        self.convsize3 = 1
+        # self.downsample = DownsampleLayer(stride=(2, 2, 2))
+        # self.upsample = UpsampleLayer(stride=(2, 2, 2))
+        
+    
+    
     def forward(self, x):
         batch, channels, height, width = x.size()
         # print("x size", x.size())
         coeffs_list = []
         # debug_print_coeffs_sizes(x)
+        # perform wavelet decomposition
+        # ! gpu 3
+        coeffs = ptwt.wavedec3(
+            x, self.wavelet,level=2)
+        # debug_print_coeffs_sizes3(coeffs)
+        items1 = coeffs[1].items()
+        toadd = [coeffs[0]]
+
+        addKeys = ['aad', 'ada', 'add', 'daa', 'dad', 'dda', 'ddd']
+        # toadd.append(coeffs[0])
+        for items in [items1]:
+            for key, value in items:
+                if key in addKeys:
+                    toadd.append(value)
+        # print(coeffs)
+        # debug_print_coeffs_sizes3(coeffs)
+        coeffs_list.append(torch.stack(toadd))
+
+        coeffs_tensor = torch.stack(coeffs_list)
+        # print(coeffs_tensor.size())
+        # coeffs_tensor = self.downsample(coeffs_tensor)
+        orig_coeffs_tensor_size = coeffs_tensor.size()
+        # print(coeffs_tensor.size())
+        coeffs_tensor = coeffs_tensor.view(
+            int(self.convsize0/6*batch), self.convsize1, self.convsize2, self.convsize3)
+        
+        new_coeffs = self.conv_layer(coeffs_tensor)
+        new_coeffs = self.bn(new_coeffs)
+        new_coeffs = self.relu(new_coeffs)
+        new_coeffs = new_coeffs.view(orig_coeffs_tensor_size)[0]
+
+        # new_coeffs = self.upsample(new_coeffs)
+
+        new_items = [new_coeffs[0]]
+        for j in range(1, len(coeffs)):
+            if j != 1:
+                new_items.append(coeffs[j])
+            else:
+                itms = {}
+                for i, (key, value) in enumerate(coeffs[1].items()):
+                    if key in addKeys:
+                        itms[key] = new_coeffs[i+1]
+                    else:
+                        itms[key] = value  # Keep as is if not in keys
+                new_items.append(itms)
+
+        # print(new_items.size())
+
+        # Perform the inverse wavelet transform
+        new_x = ptwt.waverec3(new_items, self.wavelet)
+        # print(new_x.size())
+        return new_x
+    
+    def forwardFULLLEVELS(self, x):
+        batch, channels, height, width = x.size()
+        # print("x size", x.size())
+        coeffs_list = []
+        # debug_print_coeffs_sizes(x)
+        # perform wavelet decomposition
+        level = 4
         # ! gpu 3
         coeffs = ptwt.wavedec3(
             x, self.wavelet)
+        debug_print_coeffs_sizes3(coeffs)
+        exit()
+        items1 = coeffs[level].items()
+        rep = 2**(level-1)
+        toadd = [torch.repeat_interleave(torch.repeat_interleave(
+            torch.repeat_interleave(coeffs[0], rep, dim=1), rep, dim=2), rep, dim=3)]
+
+        addKeys = ['aad', 'ada', 'add', 'daa', 'dad', 'dda', 'ddd']
+        # toadd.append(coeffs[0])
+        for items in [items1]:
+            for key, value in items:
+                if key in addKeys:
+                    toadd.append(value)
+        # print(coeffs)
         # debug_print_coeffs_sizes3(coeffs)
-        items = coeffs[5].items()
-        toadd = []
-        addKeys = ['aad', 'ada', 'add', 'daa']# , 'dad', 'dda', 'ddd'
-        for key, value in items:
-            if key in addKeys:
-                toadd.append(value)
-            
         coeffs_list.append(torch.stack(toadd))
-        # coeffs_list.append(torch.stack(ddd))
-        # ! gpu 2
-        # for i in range(batch):
-        #     for j in range(channels):
-        #         coeffs = ptwt.wavedec2(
-        #             x[i, j], self.wavelet)
-        #         cA, (cH, cV, cD) = coeffs[0], coeffs[5]
-        #         coeffs_list.append(torch.stack([cH, cV]))
-        # ! cpu 
-        # for i in range(batch):
-        #     for j in range(channels):
-                # coeffs = pywt.dwt2(
-                #     x[i, j].cpu().detach().numpy(), self.wavelet)
-                # cA, (cH, cV, cD) = coeffs
-                # coeffs_list.append([cA, cH, cV, cD])
-        # coeffs_array = np.array(coeffs_list)
-        # coeffs_tensor = torch.Tensor(coeffs_array).to(x.device)
+
         coeffs_tensor = torch.stack(coeffs_list)
-        coeffs_tensor = coeffs_tensor.view(batch, -1, height // 2, width // 2)
-        # print("coeffs_tensor size", coeffs_tensor.size())
-        out = self.conv_layer(coeffs_tensor)
-        out = self.relu(self.bn(out))
-        # print("out size", out.size())
-        # return out
-        return out.repeat(1, 2, 2, 2)
+        # print(coeffs_tensor.size())
+        orig_coeffs_tensor_size = coeffs_tensor.size()
+        coeffs_tensor = coeffs_tensor.view(
+            int(self.convsize0/6*batch), self.convsize1, self.convsize2, self.convsize3)
+        new_coeffs = self.conv_layer(coeffs_tensor)
+        # new_coeffs = self.bn(new_coeffs)
+        new_coeffs = self.relu(new_coeffs)
+        new_coeffs = new_coeffs.view(orig_coeffs_tensor_size)[0]
+
+        # print(new_coeffs.size())
+        # print(new_coeffs.size())
+        # reconstruct items from new_coeffs tensor
+        # print(coeffs_list.size())
+        # print(coeffs_list.size())
+        new_items = [new_coeffs[0][:, ::rep, ::rep, ::rep]]
+        for j in range(1, len(coeffs)):
+            if j != level:
+                new_items.append(coeffs[j])
+            else:
+                itms = {}
+                for i, (key, value) in enumerate(coeffs[level].items()):
+                    if key in addKeys:
+                        itms[key] = new_coeffs[i+1]
+                    else:
+                        itms[key] = value  # Keep as is if not in keys
+                new_items.append(itms)
+
+        # print(new_items.size())
+
+        # Perform the inverse wavelet transform
+        new_x = ptwt.waverec3(new_items, self.wavelet)
+        # print(new_x.size())
+        return new_x
 
     def forwardGPUBUTSLOW(self, x):
         batch, channels, height, width = x.size()
@@ -161,9 +293,12 @@ def debug_print_coeffs_sizes3(coeffs):
                 print(f"coeffs[{i}][{j}] (Tuple Tensor) Size: {tensor.size()}")
         elif isinstance(item, dict):
             for key, tensor in item.items():
-                print(f"coeffs[{i}]['{key}'] (Dict Tensor) Size: {tensor.size()}")
+                print(
+                    f"coeffs[{i}]['{key}'] (Dict Tensor) Size: {tensor.size()}")
         else:
             print(f"Unknown type at coeffs[{i}]")
+
+
 def debug_print_coeffs_sizes(coeffs):
     for i, item in enumerate(coeffs):
         if isinstance(item, torch.Tensor):
@@ -405,10 +540,10 @@ class SpectralTransform(nn.Module):
         #         out_channels // 4, out_channels // 4, groups)
 
         self.fu = WaveletUnit(
-            out_channels // 2, out_channels // 4)
+            out_channels // 2, out_channels // 2)
         if self.enable_lfu:
             self.lfu = WaveletUnit(
-                out_channels // 2, out_channels // 4)
+                out_channels // 2, out_channels // 2)
 
         # self.fu = FourierUnit(
         #     out_channels // 2, out_channels // 2, groups, **fu_kwargs)
@@ -458,8 +593,8 @@ class FFC(nn.Module):
         in_cl = in_channels - in_cg
         out_cg = int(out_channels * ratio_gout)
         out_cl = out_channels - out_cg
-        #groups_g = 1 if groups == 1 else int(groups * ratio_gout)
-        #groups_l = 1 if groups == 1 else groups - groups_g
+        # groups_g = 1 if groups == 1 else int(groups * ratio_gout)
+        # groups_l = 1 if groups == 1 else groups - groups_g
 
         self.ratio_gin = ratio_gin
         self.ratio_gout = ratio_gout
