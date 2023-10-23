@@ -1,3 +1,3 @@
-data_root_dir: /content/lama/my_dataset/
-out_root_dir: /content/lama/experiments/
-tb_dir: /content/lama/tb_logs/
+data_root_dir: /mnt/o/git/lama4/my_dataset/
+out_root_dir: /mnt/o/git/lama4/experiments/
+tb_dir: /mnt/o/git/lama4/tb_logs/
