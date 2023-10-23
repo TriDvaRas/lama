@@ -14,7 +14,7 @@ kwargs:
   #precision: 16
 #  amp_backend: native
 #  amp_level: O1
-  # resume_from_checkpoint: /mnt/o/git/lama4/last.ckpt  # override via command line trainer.resume_from_checkpoint=path_to_checkpoint
+  resume_from_checkpoint: /content/lama/last.ckpt  # override via command line trainer.resume_from_checkpoint=path_to_checkpoint
   # resume_from_checkpoint: /mnt/o/git/lama4/experiments/conda_2023-09-19_11-44-00_train_lama-fourier_/models/lastMod2.ckpt  # override via command line trainer.resume_from_checkpoint=path_to_checkpoint
   terminate_on_nan: False
   auto_scale_batch_size: True  
