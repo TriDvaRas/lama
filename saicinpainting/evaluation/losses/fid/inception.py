@@ -17,6 +17,7 @@ FID_WEIGHTS_URL = 'https://github.com/mseitzer/pytorch-fid/releases/download/fid
 
 LOGGER = logging.getLogger(__name__)
 
+from torchvision.models import Inception_V3_Weights
 
 class InceptionV3(nn.Module):
     """Pretrained InceptionV3 network returning feature maps"""
@@ -84,7 +85,7 @@ class InceptionV3(nn.Module):
         if use_fid_inception:
             inception = fid_inception_v3()
         else:
-            inception = models.inception_v3(pretrained=True)
+            inception = models.inception_v3(weights=Inception_V3_Weights.IMAGENET1K_V1)
 
         # Block 0: input to maxpool1
         block0 = [
@@ -147,7 +148,6 @@ class InceptionV3(nn.Module):
         """
         outp = []
         x = inp
-
         if self.resize_input:
             x = F.interpolate(x,
                               size=(299, 299),
@@ -180,7 +180,9 @@ def fid_inception_v3():
     LOGGER.info('fid_inception_v3 called')
     inception = models.inception_v3(num_classes=1008,
                                     aux_logits=False,
-                                    pretrained=False)
+                                    # weights=Inception_V3_Weights.IMAGENET1K_V1
+                                    init_weights=True
+                                    )
     LOGGER.info('models.inception_v3 done')
     inception.Mixed_5b = FIDInceptionA(192, pool_features=32)
     inception.Mixed_5c = FIDInceptionA(256, pool_features=64)

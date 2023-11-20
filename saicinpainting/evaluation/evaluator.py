@@ -33,7 +33,8 @@ class InpaintingEvaluator():
 
         self.device = torch.device(device)
 
-        self.dataloader = DataLoader(self.dataset, shuffle=False, batch_size=batch_size)
+        self.dataloader = DataLoader(
+            self.dataset, shuffle=False, batch_size=batch_size)
 
         self.integral_func = integral_func
         self.integral_title = integral_title
@@ -46,17 +47,19 @@ class InpaintingEvaluator():
         interval_names = []
         for idx_bin in range(self.bins):
             start_percent, end_percent = round(100 * bin_edges[idx_bin], num_digits), \
-                                         round(100 * bin_edges[idx_bin + 1], num_digits)
+                round(100 * bin_edges[idx_bin + 1], num_digits)
             start_percent = '{:.{n}f}'.format(start_percent, n=num_digits)
             end_percent = '{:.{n}f}'.format(end_percent, n=num_digits)
-            interval_names.append("{0}-{1}%".format(start_percent, end_percent))
+            interval_names.append(
+                "{0}-{1}%".format(start_percent, end_percent))
 
         groups = []
         for batch in self.dataloader:
             mask = batch['mask']
             batch_size = mask.shape[0]
             area = mask.to(self.device).reshape(batch_size, -1).mean(dim=-1)
-            bin_indices = np.searchsorted(bin_edges, area.detach().cpu().numpy(), side='right') - 1
+            bin_indices = np.searchsorted(
+                bin_edges, area.detach().cpu().numpy(), side='right') - 1
             # corner case: when area is equal to 1, bin_indices should return bins - 1, not bins for that element
             bin_indices[bin_indices == self.bins] = self.bins - 1
             groups.append(bin_indices)
@@ -104,26 +107,32 @@ class InpaintingEvaluator():
                     results[(score_name, group_name)] = group_values
 
         if self.integral_func is not None:
-            results[(self.integral_title, 'total')] = dict(mean=self.integral_func(results))
+            results[(self.integral_title, 'total')] = dict(
+                mean=self.integral_func(results))
 
         return results
 
 
 def ssim_fid100_f1(metrics, fid_scale=100):
+    print('metrics', metrics)
     ssim = metrics[('ssim', 'total')]['mean']
     fid = metrics[('fid', 'total')]['mean']
+    print('ssim', ssim)
+    print('fid', fid)
     fid_rel = max(0, fid_scale - fid) / fid_scale
     f1 = 2 * ssim * fid_rel / (ssim + fid_rel + 1e-3)
+    print('fid_rel', fid_rel)
+    print('f1', f1)
     return f1
 
 
 def lpips_fid100_f1(metrics, fid_scale=100):
-    neg_lpips = 1 - metrics[('lpips', 'total')]['mean']  # invert, so bigger is better
+    # invert, so bigger is better
+    neg_lpips = 1 - metrics[('lpips', 'total')]['mean']
     fid = metrics[('fid', 'total')]['mean']
     fid_rel = max(0, fid_scale - fid) / fid_scale
     f1 = 2 * neg_lpips * fid_rel / (neg_lpips + fid_rel + 1e-3)
     return f1
-
 
 
 class InpaintingEvaluatorOnline(nn.Module):
@@ -146,10 +155,11 @@ class InpaintingEvaluatorOnline(nn.Module):
         self.interval_names = []
         for idx_bin in range(self.bins_num):
             start_percent, end_percent = round(100 * self.bin_edges[idx_bin], num_digits), \
-                                         round(100 * self.bin_edges[idx_bin + 1], num_digits)
+                round(100 * self.bin_edges[idx_bin + 1], num_digits)
             start_percent = '{:.{n}f}'.format(start_percent, n=num_digits)
             end_percent = '{:.{n}f}'.format(end_percent, n=num_digits)
-            self.interval_names.append("{0}-{1}%".format(start_percent, end_percent))
+            self.interval_names.append(
+                "{0}-{1}%".format(start_percent, end_percent))
 
         self.groups = []
 
@@ -161,8 +171,10 @@ class InpaintingEvaluatorOnline(nn.Module):
 
     def _get_bins(self, mask_batch):
         batch_size = mask_batch.shape[0]
-        area = mask_batch.view(batch_size, -1).mean(dim=-1).detach().cpu().numpy()
-        bin_indices = np.clip(np.searchsorted(self.bin_edges, area) - 1, 0, self.bins_num - 1)
+        area = mask_batch.view(
+            batch_size, -1).mean(dim=-1).detach().cpu().numpy()
+        bin_indices = np.clip(np.searchsorted(
+            self.bin_edges, area) - 1, 0, self.bins_num - 1)
         return bin_indices
 
     def forward(self, batch: Dict[str, torch.Tensor]):
@@ -172,7 +184,8 @@ class InpaintingEvaluatorOnline(nn.Module):
         """
         result = {}
         with torch.no_grad():
-            image_batch, mask_batch, inpainted_batch = batch[self.image_key], batch['mask'], batch[self.inpainted_key]
+            image_batch, mask_batch, inpainted_batch = batch[
+                self.image_key], batch['mask'], batch[self.inpainted_key]
             if self.clamp_image_range is not None:
                 image_batch = torch.clamp(image_batch,
                                           min=self.clamp_image_range[0],
@@ -180,7 +193,8 @@ class InpaintingEvaluatorOnline(nn.Module):
             self.groups.extend(self._get_bins(mask_batch))
 
             for score_name, score in self.scores.items():
-                result[score_name] = score(inpainted_batch, image_batch, mask_batch)
+                result[score_name] = score(
+                    inpainted_batch, image_batch, mask_batch)
         return result
 
     def process_batch(self, batch: Dict[str, torch.Tensor]):
@@ -198,8 +212,10 @@ class InpaintingEvaluatorOnline(nn.Module):
         results = {}
         for score_name, score in self.scores.items():
             LOGGER.info(f'Getting value of {score_name}')
-            cur_states = [s[score_name] for s in states] if states is not None else None
-            total_results, group_results = score.get_value(groups=self.groups, states=cur_states)
+            cur_states = [s[score_name]
+                          for s in states] if states is not None else None
+            total_results, group_results = score.get_value(
+                groups=self.groups, states=cur_states)
             LOGGER.info(f'Getting value of {score_name} done')
             results[(score_name, 'total')] = total_results
 
@@ -208,7 +224,8 @@ class InpaintingEvaluatorOnline(nn.Module):
                 results[(score_name, group_name)] = group_values
 
         if self.integral_func is not None:
-            results[(self.integral_title, 'total')] = dict(mean=self.integral_func(results))
+            results[(self.integral_title, 'total')] = dict(
+                mean=self.integral_func(results))
 
         LOGGER.info(f'{type(self)}: reset scores')
         self.groups = []

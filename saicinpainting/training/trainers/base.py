@@ -17,18 +17,19 @@ from saicinpainting.training.modules import make_generator, make_discriminator
 from saicinpainting.training.visualizers import make_visualizer
 from saicinpainting.utils import add_prefix_to_keys, average_dicts, set_requires_grad, flatten_dict, \
     get_has_ddp_rank
+from torch.nn.utils import clip_grad_norm_
 
 LOGGER = logging.getLogger(__name__)
 
 
-def make_optimizer(parameters, kind='adamw', **kwargs):
+def make_optimizer(parameters, kind='adamw',lr=1e-3, **kwargs):
     if kind == 'adam':
         optimizer_class = torch.optim.Adam
     elif kind == 'adamw':
         optimizer_class = torch.optim.AdamW
     else:
         raise ValueError(f'Unknown optimizer kind {kind}')
-    return optimizer_class(parameters, **kwargs)
+    return optimizer_class(parameters, lr=lr, **kwargs)
 
 
 def update_running_average(result: nn.Module, new_iterate_model: nn.Module, decay=0.999):
@@ -37,7 +38,8 @@ def update_running_average(result: nn.Module, new_iterate_model: nn.Module, deca
         new_params = dict(new_iterate_model.named_parameters())
 
         for k in res_params.keys():
-            res_params[k].data.mul_(decay).add_(new_params[k].data, alpha=1 - decay)
+            res_params[k].data.mul_(decay).add_(
+                new_params[k].data, alpha=1 - decay)
 
 
 def make_multiscale_noise(base_tensor, scales=6, scale_mode='bilinear'):
@@ -46,8 +48,10 @@ def make_multiscale_noise(base_tensor, scales=6, scale_mode='bilinear'):
     result = []
     align_corners = False if scale_mode in ('bilinear', 'bicubic') else None
     for _ in range(scales):
-        cur_sample = torch.randn(batch_size, 1, cur_height, cur_width, device=base_tensor.device)
-        cur_sample_scaled = F.interpolate(cur_sample, size=(height, width), mode=scale_mode, align_corners=align_corners)
+        cur_sample = torch.randn(
+            batch_size, 1, cur_height, cur_width, device=base_tensor.device)
+        cur_sample_scaled = F.interpolate(cur_sample, size=(
+            height, width), mode=scale_mode, align_corners=align_corners)
         result.append(cur_sample_scaled)
         cur_height //= 2
         cur_width //= 2
@@ -61,7 +65,11 @@ class BaseInpaintingTrainingModule(ptl.LightningModule):
                  **kwargs):
         super().__init__(*args, **kwargs)
         LOGGER.info('BaseInpaintingTrainingModule init called')
-
+        self.automatic_optimization = False
+        self.learning_rate = 1e-3
+        # self.batch_size = config.data.train.batch_size
+        
+        
         self.config = config
 
         self.generator = make_generator(config, **self.config.generator)
@@ -72,8 +80,10 @@ class BaseInpaintingTrainingModule(ptl.LightningModule):
 
         if not predict_only:
             self.save_hyperparameters(self.config)
-            self.discriminator = make_discriminator(**self.config.discriminator)
-            self.adversarial_loss = make_discrim_loss(**self.config.losses.adversarial)
+            self.discriminator = make_discriminator(
+                **self.config.discriminator)
+            self.adversarial_loss = make_discrim_loss(
+                **self.config.losses.adversarial)
             self.visualizer = make_visualizer(**self.config.visualizer)
             self.val_evaluator = make_evaluator(**self.config.evaluator)
             self.test_evaluator = make_evaluator(**self.config.evaluator)
@@ -102,7 +112,7 @@ class BaseInpaintingTrainingModule(ptl.LightningModule):
 
             if self.config.losses.get("mse", {"weight": 0})['weight'] > 0:
                 self.loss_mse = nn.MSELoss(reduction='none')
-            
+
             if self.config.losses.perceptual.weight > 0:
                 self.loss_pl = PerceptualLoss()
 
@@ -112,19 +122,23 @@ class BaseInpaintingTrainingModule(ptl.LightningModule):
                 self.loss_resnet_pl = None
 
         self.visualize_each_iters = visualize_each_iters
+        self.validation_step_outputs = []
+        
         LOGGER.info('BaseInpaintingTrainingModule init done')
 
     def configure_optimizers(self):
         discriminator_params = list(self.discriminator.parameters())
         return [
-            dict(optimizer=make_optimizer(self.generator.parameters(), **self.config.optimizers.generator)),
-            dict(optimizer=make_optimizer(discriminator_params, **self.config.optimizers.discriminator)),
+            dict(optimizer=make_optimizer(self.generator.parameters(), lr=self.learning_rate,
+                 **self.config.optimizers.generator)),
+            dict(optimizer=make_optimizer(discriminator_params, lr=self.learning_rate/10,
+                 **self.config.optimizers.discriminator)),
         ]
 
     def train_dataloader(self):
         kwargs = dict(self.config.data.train)
         if self.use_ddp:
-            kwargs['ddp_kwargs'] = dict(num_replicas=self.trainer.num_nodes * self.trainer.num_processes,
+            kwargs['ddp_kwargs'] = dict(num_replicas=self.trainer.num_nodes * self.trainer.num_devices,
                                         rank=self.trainer.global_rank,
                                         shuffle=True)
         dataloader = make_default_train_dataloader(**self.config.data.train)
@@ -134,19 +148,58 @@ class BaseInpaintingTrainingModule(ptl.LightningModule):
         res = [make_default_val_dataloader(**self.config.data.val)]
 
         if self.config.data.visual_test is not None:
-            res = res + [make_default_val_dataloader(**self.config.data.visual_test)]
+            res = res + \
+                [make_default_val_dataloader(**self.config.data.visual_test)]
         else:
             res = res + res
 
         extra_val = self.config.data.get('extra_val', ())
         if extra_val:
-            res += [make_default_val_dataloader(**extra_val[k]) for k in self.extra_val_titles]
+            res += [make_default_val_dataloader(**extra_val[k])
+                    for k in self.extra_val_titles]
 
         return res
 
-    def training_step(self, batch, batch_idx, optimizer_idx=None):
+    # def training_step(self, batch, batch_idx, optimizer_idx=None):
+    #     self._is_training_step = True
+    #     return self._do_step(batch, batch_idx, mode='train', optimizer_idx=optimizer_idx)
+    # def training_step(self, batch, batch_idx):
+    #     self._is_training_step = True
+    #     losses = []
+    #     optimizers = self.optimizers()
+
+    #     for idx, optimizer in enumerate(optimizers):
+    #         loss = self._do_step(batch, batch_idx, mode='train', optimizer_idx=idx)
+    #         self.manual_backward(loss)
+    #         optimizer.step()
+    #         optimizer.zero_grad()
+    #         losses.append(loss)
+
+    #     # You can return the first loss, last loss, a sum, an average, etc.
+    #     # This depends on how you want to handle multiple losses.
+    #     clip_grad_norm_(self.parameters(), max_norm=1.0)
+    #     return losses  # Example: return the first loss
+    def training_step(self, batch, batch_idx):
         self._is_training_step = True
-        return self._do_step(batch, batch_idx, mode='train', optimizer_idx=optimizer_idx)
+        losses = []
+        optimizers = self.optimizers()
+
+        for idx, optimizer in enumerate(optimizers):
+            output = self._do_step(batch, batch_idx, mode='train', optimizer_idx=idx)
+
+            # Extract the loss tensor from the dictionary.
+            loss_tensor = output['loss']
+
+            # Perform the backward pass on the tensor.
+            self.manual_backward(loss_tensor)
+            optimizer.step()
+            optimizer.zero_grad()
+            losses.append(loss_tensor)
+
+        clip_grad_norm_(self.parameters(), max_norm=1.0)
+
+        # You may want to return a single value, like the mean of the losses
+        return torch.mean(torch.stack(losses))
 
     def validation_step(self, batch, batch_idx, dataloader_idx):
         extra_val_key = None
@@ -158,7 +211,9 @@ class BaseInpaintingTrainingModule(ptl.LightningModule):
             mode = 'extra_val'
             extra_val_key = self.extra_val_titles[dataloader_idx - 2]
         self._is_training_step = False
-        return self._do_step(batch, batch_idx, mode=mode, extra_val_key=extra_val_key)
+        result = self._do_step(batch, batch_idx, mode=mode, extra_val_key=extra_val_key)
+        self.validation_step_outputs.append(result)
+        return result
 
     def training_step_end(self, batch_parts_outputs):
         if self.training and self.average_generator \
@@ -167,28 +222,39 @@ class BaseInpaintingTrainingModule(ptl.LightningModule):
             if self.generator_average is None:
                 self.generator_average = copy.deepcopy(self.generator)
             else:
-                update_running_average(self.generator_average, self.generator, decay=self.generator_avg_beta)
+                update_running_average(
+                    self.generator_average, self.generator, decay=self.generator_avg_beta)
             self.last_generator_averaging_step = self.global_step
 
         full_loss = (batch_parts_outputs['loss'].mean()
-                     if torch.is_tensor(batch_parts_outputs['loss'])  # loss is not tensor when no discriminator used
+                     # loss is not tensor when no discriminator used
+                     if torch.is_tensor(batch_parts_outputs['loss'])
                      else torch.tensor(batch_parts_outputs['loss']).float().requires_grad_(True))
-        log_info = {k: v.mean() for k, v in batch_parts_outputs['log_info'].items()}
+        log_info = {k: v.mean()
+                    for k, v in batch_parts_outputs['log_info'].items()}
         self.log_dict(log_info, on_step=True, on_epoch=False)
         return full_loss
 
-    def validation_epoch_end(self, outputs):
+    def on_validation_epoch_end(self):
+        outputs = [self.validation_step_outputs]
         outputs = [step_out for out_group in outputs for step_out in out_group]
-        averaged_logs = average_dicts(step_out['log_info'] for step_out in outputs)
+        # for step_out in outputs:
+            # print(step_out)
+            # print(step_out['log_info'])
+        averaged_logs = average_dicts(
+            step_out['log_info'] for step_out in outputs)
         self.log_dict({k: v.mean() for k, v in averaged_logs.items()})
 
         pd.set_option('display.max_columns', 500)
         pd.set_option('display.width', 1000)
 
         # standard validation
-        val_evaluator_states = [s['val_evaluator_state'] for s in outputs if 'val_evaluator_state' in s]
-        val_evaluator_res = self.val_evaluator.evaluation_end(states=val_evaluator_states)
-        val_evaluator_res_df = pd.DataFrame(val_evaluator_res).stack(1).unstack(0)
+        val_evaluator_states = [s['val_evaluator_state']
+                                for s in outputs if 'val_evaluator_state' in s]
+        val_evaluator_res = self.val_evaluator.evaluation_end(
+            states=val_evaluator_states)
+        val_evaluator_res_df = pd.DataFrame(
+            val_evaluator_res).stack(1).unstack(0)
         val_evaluator_res_df.dropna(axis=1, how='all', inplace=True)
         LOGGER.info(f'Validation metrics after epoch #{self.current_epoch}, '
                     f'total {self.global_step} iterations:\n{val_evaluator_res_df}')
@@ -199,27 +265,35 @@ class BaseInpaintingTrainingModule(ptl.LightningModule):
         # standard visual test
         test_evaluator_states = [s['test_evaluator_state'] for s in outputs
                                  if 'test_evaluator_state' in s]
-        test_evaluator_res = self.test_evaluator.evaluation_end(states=test_evaluator_states)
-        test_evaluator_res_df = pd.DataFrame(test_evaluator_res).stack(1).unstack(0)
-        test_evaluator_res_df.dropna(axis=1, how='all', inplace=True)
-        LOGGER.info(f'Test metrics after epoch #{self.current_epoch}, '
-                    f'total {self.global_step} iterations:\n{test_evaluator_res_df}')
-
-        for k, v in flatten_dict(test_evaluator_res).items():
-            self.log(f'test_{k}', v)
+        if len(test_evaluator_states) != 0:
+            test_evaluator_res = self.test_evaluator.evaluation_end(
+                states=test_evaluator_states)
+            test_evaluator_res_df = pd.DataFrame(
+                test_evaluator_res).stack(1).unstack(0)
+            test_evaluator_res_df.dropna(axis=1, how='all', inplace=True)
+            LOGGER.info(f'Test metrics after epoch #{self.current_epoch}, '
+                        f'total {self.global_step} iterations:\n{test_evaluator_res_df}')
+            for k, v in flatten_dict(test_evaluator_res).items():
+                self.log(f'test_{k}', v)
+        else:
+            LOGGER.info('TEST EVALUATOR STATES IS EMPTY')
 
         # extra validations
         if self.extra_evaluators:
             for cur_eval_title, cur_evaluator in self.extra_evaluators.items():
                 cur_state_key = f'extra_val_{cur_eval_title}_evaluator_state'
-                cur_states = [s[cur_state_key] for s in outputs if cur_state_key in s]
-                cur_evaluator_res = cur_evaluator.evaluation_end(states=cur_states)
-                cur_evaluator_res_df = pd.DataFrame(cur_evaluator_res).stack(1).unstack(0)
+                cur_states = [s[cur_state_key]
+                              for s in outputs if cur_state_key in s]
+                cur_evaluator_res = cur_evaluator.evaluation_end(
+                    states=cur_states)
+                cur_evaluator_res_df = pd.DataFrame(
+                    cur_evaluator_res).stack(1).unstack(0)
                 cur_evaluator_res_df.dropna(axis=1, how='all', inplace=True)
                 LOGGER.info(f'Extra val {cur_eval_title} metrics after epoch #{self.current_epoch}, '
                             f'total {self.global_step} iterations:\n{cur_evaluator_res_df}')
                 for k, v in flatten_dict(cur_evaluator_res).items():
                     self.log(f'extra_val_{cur_eval_title}_{k}', v)
+        self.validation_step_outputs.clear()
 
     def _do_step(self, batch, batch_idx, mode='train', optimizer_idx=None, extra_val_key=None):
         if optimizer_idx == 0:  # step for generator
@@ -249,18 +323,23 @@ class BaseInpaintingTrainingModule(ptl.LightningModule):
             vis_suffix = f'_{mode}'
             if mode == 'extra_val':
                 vis_suffix += f'_{extra_val_key}'
-            self.visualizer(self.current_epoch, batch_idx, batch, suffix=vis_suffix)
+            self.visualizer(self.current_epoch, batch_idx,
+                            batch, suffix=vis_suffix)
 
         metrics_prefix = f'{mode}_'
         if mode == 'extra_val':
             metrics_prefix += f'{extra_val_key}_'
-        result = dict(loss=total_loss, log_info=add_prefix_to_keys(metrics, metrics_prefix))
+        result = dict(loss=total_loss, log_info=add_prefix_to_keys(
+            metrics, metrics_prefix))
         if mode == 'val':
-            result['val_evaluator_state'] = self.val_evaluator.process_batch(batch)
+            result['val_evaluator_state'] = self.val_evaluator.process_batch(
+                batch)
         elif mode == 'test':
-            result['test_evaluator_state'] = self.test_evaluator.process_batch(batch)
+            result['test_evaluator_state'] = self.test_evaluator.process_batch(
+                batch)
         elif mode == 'extra_val':
-            result[f'extra_val_{extra_val_key}_evaluator_state'] = self.extra_evaluators[extra_val_key].process_batch(batch)
+            result[f'extra_val_{extra_val_key}_evaluator_state'] = self.extra_evaluators[extra_val_key].process_batch(
+                batch)
 
         return result
 
@@ -283,9 +362,12 @@ class BaseInpaintingTrainingModule(ptl.LightningModule):
         out_size = batch['image'].shape[2:]
         discr_real_out, _ = self.discriminator(batch['image'])
         discr_fake_out, _ = self.discriminator(batch['predicted_image'])
-        batch['discr_output_real'] = F.interpolate(discr_real_out, size=out_size, mode='nearest')
-        batch['discr_output_fake'] = F.interpolate(discr_fake_out, size=out_size, mode='nearest')
-        batch['discr_output_diff'] = batch['discr_output_real'] - batch['discr_output_fake']
+        batch['discr_output_real'] = F.interpolate(
+            discr_real_out, size=out_size, mode='nearest')
+        batch['discr_output_fake'] = F.interpolate(
+            discr_fake_out, size=out_size, mode='nearest')
+        batch['discr_output_diff'] = batch['discr_output_real'] - \
+            batch['discr_output_fake']
 
     def get_ddp_rank(self):
-        return self.trainer.global_rank if (self.trainer.num_nodes * self.trainer.num_processes) > 1 else None
+        return self.trainer.global_rank if (self.trainer.num_nodes * self.trainer.num_devices) > 1 else None

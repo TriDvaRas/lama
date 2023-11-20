@@ -10,7 +10,7 @@ from saicinpainting.utils import check_and_warn_input_range
 IMAGENET_MEAN = torch.FloatTensor([0.485, 0.456, 0.406])[None, :, None, None]
 IMAGENET_STD = torch.FloatTensor([0.229, 0.224, 0.225])[None, :, None, None]
 
-
+from torchvision.models import VGG19_Weights
 class PerceptualLoss(nn.Module):
     def __init__(self, normalize_inputs=True):
         super(PerceptualLoss, self).__init__()
@@ -19,7 +19,7 @@ class PerceptualLoss(nn.Module):
         self.mean_ = IMAGENET_MEAN
         self.std_ = IMAGENET_STD
 
-        vgg = torchvision.models.vgg19(pretrained=True).features
+        vgg = torchvision.models.vgg19(weights=VGG19_Weights.IMAGENET1K_V1).features
         vgg_avg_pooling = []
 
         for weights in vgg.parameters():

@@ -17,11 +17,14 @@ from omegaconf import OmegaConf
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.loggers import TensorBoardLogger
-from pytorch_lightning.plugins import DDPPlugin
+from pytorch_lightning.tuner import Tuner
 
 from saicinpainting.training.trainers import make_training_model
 from saicinpainting.utils import register_debug_signal_handlers, handle_ddp_subprocess, handle_ddp_parent_process, \
     handle_deterministic_config
+import torch
+torch.set_float32_matmul_precision('medium')
+torch.backends.cuda.matmul.allow_tf32 = True
 
 LOGGER = logging.getLogger(__name__)
 
@@ -61,13 +64,20 @@ def main(config: OmegaConf):
                 # train_time_interval=timedelta(
                 #          minutes=1,
                 #      ),
+                
                 **config.trainer.checkpoint_kwargs
             ),
             logger=metrics_logger,
             default_root_dir=os.getcwd(),
+            
             **trainer_kwargs
         )
-        trainer.fit(training_model)
+        # tuner = Tuner(trainer)
+        # tuner.lr_find(training_model)
+        # tuner.scale_batch_size(training_model)
+        
+        fit_kwargs = OmegaConf.to_container(config.trainer.fit_kwargs, resolve=True)
+        trainer.fit(training_model, **fit_kwargs)
     except KeyboardInterrupt:
         LOGGER.warning('Interrupted by user')
     except Exception as ex:

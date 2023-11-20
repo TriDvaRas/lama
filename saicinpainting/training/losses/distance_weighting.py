@@ -47,11 +47,12 @@ class EmulatedEDTMask(nn.Module):
             result = self.blur_filter(1 - dilated_known_mask) * mask
             return result
 
+from torchvision.models import VGG19_Weights
 
 class PropagatePerceptualSim(nn.Module):
     def __init__(self, level=2, max_iters=10, temperature=500, erode_mask_size=3):
         super().__init__()
-        vgg = torchvision.models.vgg19(pretrained=True).features
+        vgg = torchvision.models.vgg19(weights=VGG19_Weights.IMAGENET1K_V1).features
         vgg_avg_pooling = []
 
         for weights in vgg.parameters():

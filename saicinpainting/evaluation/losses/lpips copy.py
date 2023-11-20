@@ -545,16 +545,23 @@ class PNetLin(nn.Module):
 
         if (self.pnet_type in ['vgg', 'vgg16']):
             net_type = vgg16
+            from torchvision.models import VGG16_Weights
+            net_weights = VGG16_Weights.IMAGENET1K_V1
             self.chns = [64, 128, 256, 512, 512]
         elif (self.pnet_type == 'alex'):
             net_type = alexnet
+            from torchvision.models import AlexNet_Weights
+            net_weights = AlexNet_Weights.IMAGENET1K
             self.chns = [64, 192, 384, 256, 256]
         elif (self.pnet_type == 'squeeze'):
             net_type = squeezenet
+            from torchvision.models import SqueezeNet1_0_Weights
+            net_weights = SqueezeNet_Weights.IMAGENET1K
             self.chns = [64, 128, 256, 384, 384, 512, 512]
         self.L = len(self.chns)
 
-        self.net = net_type(pretrained=not self.pnet_rand, requires_grad=self.pnet_tune)
+        self.net = net_type(weights=net_weights if not self.pnet_rand else None, 
+                            requires_grad=self.pnet_tune)
 
         if (lpips):
             self.lin0 = NetLinLayer(self.chns[0], use_dropout=use_dropout)
@@ -712,11 +719,11 @@ from collections import namedtuple
 import torch
 from torchvision import models as tv
 
-
+from torchvision.models import SqueezeNet1_0_Weights
 class squeezenet(torch.nn.Module):
     def __init__(self, requires_grad=False, pretrained=True):
         super(squeezenet, self).__init__()
-        pretrained_features = tv.squeezenet1_1(pretrained=pretrained).features
+        pretrained_features = tv.squeezenet1_1(weights=SqueezeNet1_0_Weights if pretrained else None).features
         self.slice1 = torch.nn.Sequential()
         self.slice2 = torch.nn.Sequential()
         self.slice3 = torch.nn.Sequential()
@@ -763,11 +770,11 @@ class squeezenet(torch.nn.Module):
 
         return out
 
-
+from torchvision.models import AlexNet_Weights
 class alexnet(torch.nn.Module):
     def __init__(self, requires_grad=False, pretrained=True):
         super(alexnet, self).__init__()
-        alexnet_pretrained_features = tv.alexnet(pretrained=pretrained).features
+        alexnet_pretrained_features = tv.alexnet(weights=AlexNet_Weights if pretrained else None).features
         self.slice1 = torch.nn.Sequential()
         self.slice2 = torch.nn.Sequential()
         self.slice3 = torch.nn.Sequential()
@@ -808,7 +815,7 @@ from torchvision.models import VGG16_Weights
 class vgg16(torch.nn.Module):
     def __init__(self, requires_grad=False, pretrained=True):
         super(vgg16, self).__init__()
-        vgg_pretrained_features = tv.vgg16(weights=VGG16_Weights.IMAGENET1K_V1 if pretrained else None).features
+        vgg_pretrained_features = tv.vgg16(weights=VGG16_Weights).features
         self.slice1 = torch.nn.Sequential()
         self.slice2 = torch.nn.Sequential()
         self.slice3 = torch.nn.Sequential()
@@ -845,20 +852,21 @@ class vgg16(torch.nn.Module):
 
         return out
 
+from torchvision.models import ResNet18_Weights, ResNet34_Weights, ResNet50_Weights, ResNet101_Weights, ResNet152_Weights
 
 class resnet(torch.nn.Module):
     def __init__(self, requires_grad=False, pretrained=True, num=18):
         super(resnet, self).__init__()
         if (num == 18):
-            self.net = tv.resnet18(pretrained=pretrained)
+            self.net = tv.resnet18(weights=ResNet18_Weights if pretrained else None)
         elif (num == 34):
-            self.net = tv.resnet34(pretrained=pretrained)
+            self.net = tv.resnet34(weights=ResNet34_Weights if pretrained else None)
         elif (num == 50):
-            self.net = tv.resnet50(pretrained=pretrained)
+            self.net = tv.resnet50(weights=ResNet50_Weights if pretrained else None)
         elif (num == 101):
-            self.net = tv.resnet101(pretrained=pretrained)
+            self.net = tv.resnet101(weights=ResNet101_Weights if pretrained else None)
         elif (num == 152):
-            self.net = tv.resnet152(pretrained=pretrained)
+            self.net = tv.resnet152(weights=ResNet152_Weights if pretrained else None)
         self.N_slices = 5
 
         self.conv1 = self.net.conv1

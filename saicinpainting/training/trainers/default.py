@@ -68,6 +68,9 @@ class DefaultInpaintingTrainingModule(BaseInpaintingTrainingModule):
             masked_img = torch.cat([masked_img, mask], dim=1)
 
         batch['predicted_image'] = self.generator(masked_img)
+        print(mask.shape)
+        print(batch['predicted_image'].shape)
+        print(batch['image'].shape)
         batch['inpainted'] = mask * batch['predicted_image'] + (1 - mask) * batch['image']
 
         if self.fake_fakes_proba > 1e-3:

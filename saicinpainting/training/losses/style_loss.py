@@ -30,11 +30,11 @@ class PerceptualLoss(nn.Module):
 
         return content_loss
 
-
+from torchvision.models import VGG19_Weights
 class VGG19(torch.nn.Module):
     def __init__(self):
         super(VGG19, self).__init__()
-        features = models.vgg19(pretrained=True).features
+        features = models.vgg19(weights=VGG19_Weights.IMAGENET1K_V1).features
         self.relu1_1 = torch.nn.Sequential()
         self.relu1_2 = torch.nn.Sequential()
 
