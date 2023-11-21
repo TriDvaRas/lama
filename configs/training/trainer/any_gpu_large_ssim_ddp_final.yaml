@@ -4,8 +4,8 @@ kwargs:
   max_epochs: 1000
   # gradient_clip_val: 1
   # log_gpu_memory: None  # set to min_max or all for debug
-  limit_train_batches: 0.3
-  val_check_interval: 1.0
+  limit_train_batches: 0.5
+  val_check_interval: 0.5
   # fast_dev_run: True  # uncomment for faster debug
   # track_grad_norm: 2  # uncomment to track L2 gradients norm
   log_every_n_steps: 500
@@ -17,9 +17,9 @@ kwargs:
   # resume_from_checkpoint:   # override via command line trainer.resume_from_checkpoint=path_to_checkpoint
   # terminate_on_nan: False
   # auto_scale_batch_size: True  
-  check_val_every_n_epoch: 0.45
+  check_val_every_n_epoch: 0.5
   num_sanity_val_steps: 8
-  limit_val_batches: 0.5
+  limit_val_batches: 0.7
   use_distributed_sampler: False
 
 fit_kwargs:
