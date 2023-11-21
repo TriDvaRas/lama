@@ -114,15 +114,15 @@ class InpaintingEvaluator():
 
 
 def ssim_fid100_f1(metrics, fid_scale=100):
-    print('metrics', metrics)
+    # print('metrics', metrics)
     ssim = metrics[('ssim', 'total')]['mean']
     fid = metrics[('fid', 'total')]['mean']
-    print('ssim', ssim)
-    print('fid', fid)
+    # print('ssim', ssim)
+    # print('fid', fid)
     fid_rel = max(0, fid_scale - fid) / fid_scale
     f1 = 2 * ssim * fid_rel / (ssim + fid_rel + 1e-3)
-    print('fid_rel', fid_rel)
-    print('f1', f1)
+    # print('fid_rel', fid_rel)
+    # print('f1', f1)
     return f1
 
 
