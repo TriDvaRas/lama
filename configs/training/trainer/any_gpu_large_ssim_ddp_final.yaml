@@ -17,9 +17,9 @@ kwargs:
   # resume_from_checkpoint:   # override via command line trainer.resume_from_checkpoint=path_to_checkpoint
   # terminate_on_nan: False
   # auto_scale_batch_size: True  
-  check_val_every_n_epoch: 1
+  check_val_every_n_epoch: 0.4
   num_sanity_val_steps: 8
-  limit_val_batches: 0.25
+  limit_val_batches: 0.5
   use_distributed_sampler: False
 
 fit_kwargs:
@@ -27,8 +27,9 @@ fit_kwargs:
   # ckpt_path: /mnt/o/git/lama5/lama/experiments/train_lama-fourier_/models/epoch=6-step=16800.ckpt
 
 checkpoint_kwargs:
+  filename: "{epoch}-{val_loss:.2f}-{other_metric:.2f}"
   verbose: True
-  save_top_k: 5
+  save_top_k: 3
   save_last: True
   every_n_epochs: 1
   monitor: val_ssim_fid100_f1_total_mean
