@@ -5,7 +5,7 @@ kwargs:
   # gradient_clip_val: 1
   # log_gpu_memory: None  # set to min_max or all for debug
   limit_train_batches: 0.3
-  val_check_interval: ${trainer.kwargs.limit_train_batches}
+  val_check_interval: 1.0
   # fast_dev_run: True  # uncomment for faster debug
   # track_grad_norm: 2  # uncomment to track L2 gradients norm
   log_every_n_steps: 500
@@ -24,7 +24,7 @@ kwargs:
 
 fit_kwargs:
   ckpt_path: null
-  # ckpt_path: /mnt/o/git/lama5/lama/experiments/train_lama-fourier_/models/epoch=3-step=600.ckpt
+  # ckpt_path: /mnt/o/git/lama5/lama/experiments/train_lama-fourier_/models/epoch=6-step=16800.ckpt
 
 checkpoint_kwargs:
   verbose: True
