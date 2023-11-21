@@ -17,7 +17,7 @@ kwargs:
   # resume_from_checkpoint:   # override via command line trainer.resume_from_checkpoint=path_to_checkpoint
   # terminate_on_nan: False
   # auto_scale_batch_size: True  
-  check_val_every_n_epoch: 0.4
+  check_val_every_n_epoch: 0.45
   num_sanity_val_steps: 8
   limit_val_batches: 0.5
   use_distributed_sampler: False
